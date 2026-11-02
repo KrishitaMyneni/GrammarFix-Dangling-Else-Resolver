@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GrammarFix — Dangling-Else Resolver</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="page-header">
+    <h1>GrammarFix — Dangling-Else Resolver</h1>
+    <p>PS-04 Compiler Design — Ambiguity Detection, Grammar Disambiguation &amp; Parse Tree Visualizer</p>
+  </header>
+
+  <main class="container">
+    <!-- 1. Code Input Section -->
+    <section class="panel" id="inputSection">
+      <h2>1. Nested If-Else Code Input</h2>
+      <label class="label" for="codeInput">Enter C / Java / JS style conditional statement (terminate statements with semicolons <code>;</code>):</label>
+      <textarea id="codeInput" class="code-input" spellcheck="false">if (c1) if (c2) s1; else s2;</textarea>
+      <p class="hint">Example syntax supported by <code>grammar.js</code>: <code>if (c1) if (c2) s1; else s2;</code> or blocks with <code>{ ... }</code>.</p>
+      <div class="button-row">
+        <button type="button" id="analyzeBtn" class="btn">Analyze Grammar</button>
+        <button type="button" class="btn btn-secondary preset-btn" data-code="if (c1) s1; else s2;">Preset: Simple If-Else</button>
+        <button type="button" class="btn btn-secondary preset-btn" data-code="if (c1) if (c2) s1; else s2;">Preset: Nested Ambiguity</button>
+        <button type="button" class="btn btn-secondary preset-btn" data-code="if (c1) if (c2) s1; else s2; else s3;">Preset: Multiple Else</button>
+        <button type="button" class="btn btn-secondary preset-btn" data-code="if (c1) if (c2) if (c3) s1; else s2;">Preset: 3-Level Nested</button>
+        <button type="button" class="btn btn-secondary preset-btn" data-code="if () else s1;">Preset: Invalid Syntax</button>
+      </div>
+    </section>
+
+    <!-- 2. Ambiguity Status & Explanation Section -->
+    <section class="panel" id="statusSection">
+      <h2>2. Ambiguity Detection Status &amp; Else-Association Explanation</h2>
+      <div id="ambiguityStatus" class="status-banner">Waiting for analysis...</div>
+      <div id="errorBox" class="error-box" role="alert"></div>
+      <div id="explanationText" class="explanation-box">Click "Analyze Grammar" to inspect ambiguity and see which <code>if</code> receives each <code>else</code>.</div>
+    </section>
+
+    <!-- 3. Grammar Display Section -->
+    <section class="panel" id="grammarSection">
+      <h2>3. Grammar Productions (Before &amp; After Disambiguation)</h2>
+      <div class="grammar-grid">
+        <div class="grammar-box">
+          <h3>Original Ambiguous Grammar</h3>
+          <pre id="originalGrammar" class="grammar-pre">Not analyzed yet.</pre>
+        </div>
+        <div class="grammar-box">
+          <h3>Transformed Unambiguous Grammar</h3>
+          <pre id="resolvedGrammar" class="grammar-pre">Not analyzed yet.</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Competing Parse Trees Visualization -->
+    <section class="panel" id="beforeTreesSection">
+      <h2>4. Competing Parse Trees (Before Resolution)</h2>
+      <div id="treeBefore" class="tree-container"></div>
+    </section>
+
+    <!-- 5. Resolved Parse Tree Visualization -->
+    <section class="panel" id="afterTreeSection">
+      <h2>5. Resolved Parse Tree (Nearest-Unmatched-If Rule)</h2>
+      <div id="treeAfter" class="tree-container"></div>
+    </section>
+
+    <!-- 6. Bonus Test-Case Builder Section -->
+    <section class="panel" id="bonusSection">
+      <h2>6. Bonus Test-Case Builder</h2>
+      <div class="bonus-controls">
+        <div class="control-group">
+          <label class="label" for="nestingDepth">Nesting Depth</label>
+          <input type="number" id="nestingDepth" min="1" max="5" value="2" />
+        </div>
+        <div class="control-group">
+          <label class="label" for="elsePlacement">Else Placement</label>
+          <select id="elsePlacement">
+            <option value="inner">Inner If (Dangling Else)</option>
+            <option value="outer">Outer If (Braced Inner)</option>
+            <option value="both">All Ifs Matched (Multiple Else)</option>
+            <option value="none">No Else Clauses</option>
+          </select>
+        </div>
+        <button type="button" id="generateBonusBtn" class="btn">Generate Test Case</button>
+      </div>
+      <div id="bonusStatus" class="bonus-notice">Checking for <code>bonus.js</code> module...</div>
+    </section>
+
+    <!-- 7. Automated Test Suite Section -->
+    <section class="panel" id="testSection">
+      <h2>7. Automated Test Runner</h2>
+      <div class="button-row" style="margin-top: 0; margin-bottom: 12px;">
+        <button type="button" id="runTestsBtn" class="btn">Run Tests</button>
+      </div>
+      <div id="testResults">Click "Run Tests" to execute <code>runTests()</code> from <code>tests.js</code>.</div>
+    </section>
+  </main>
+
+  <!-- Load existing project modules in dependency order -->
+  <script src="grammar.js"></script>
+  <script src="visualization.js"></script>
+  <script src="tests.js"></script>
+  <script src="bonus.js" onerror="window.__bonusModuleMissing = true;"></script>
+
+  <!-- Frontend Integration Controller -->
+  <script>
+    (function () {
+      "use strict";
+
+      const codeInput = document.getElementById("codeInput");
+      const analyzeBtn = document.getElementById("analyzeBtn");
+      const ambiguityStatus = document.getElementById("ambiguityStatus");
+      const errorBox = document.getElementById("errorBox");
+      const explanationText = document.getElementById("explanationText");
+      const originalGrammarEl = document.getElementById("originalGrammar");
+      const resolvedGrammarEl = document.getElementById("resolvedGrammar");
+      const treeBeforeEl = document.getElementById("treeBefore");
+      const treeAfterEl = document.getElementById("treeAfter");
+      const runTestsBtn = document.getElementById("runTestsBtn");
+      const generateBonusBtn = document.getElementById("generateBonusBtn");
+      const nestingDepthInput = document.getElementById("nestingDepth");
+      const elsePlacementSelect = document.getElementById("elsePlacement");
+      const bonusStatus = document.getElementById("bonusStatus");
+
+      /**
+       * Extracts human-readable pairings of which `if` node owns each `else` node
+       * from the resolved parse tree returned by `analyzeGrammar`.
+       */
+      function describeElseAssociations(tree) {
+        if (!tree || typeof tree !== "object") return [];
+        const associations = [];
+
+        function walk(node) {
+          if (!node || typeof node !== "object") return;
+          const label = String(node.label || "");
+          const children = Array.isArray(node.children) ? node.children : [];
+
+          if (label.toLowerCase().startsWith("if")) {
+            for (let i = 0; i < children.length; i++) {
+              const child = children[i];
+              if (child && String(child.label || "").toLowerCase() === "else") {
+                const elseBody =
+                  Array.isArray(child.children) && child.children[0]
+                    ? child.children[0].label
+                    : "body";
+                associations.push(
+                  "else (" + elseBody + ") is paired with " + label
+                );
+              }
+            }
+          }
+
+          for (let i = 0; i < children.length; i++) {
+            walk(children[i]);
+          }
+        }
+
+        walk(tree);
+        return associations;
+      }
+
+      /**
+       * Runs `analyzeGrammar` on the current textarea input and updates all UI panels
+       * and SVG visualizations via `renderTrees`.
+       */
+      function handleAnalyze() {
+        if (typeof window.analyzeGrammar !== "function") {
+          ambiguityStatus.className = "status-banner status-error";
+          ambiguityStatus.textContent = "Error: grammar.js (analyzeGrammar) is not loaded.";
+          return;
+        }
+
+        const code = codeInput.value;
+        const result = window.analyzeGrammar(code);
+
+        // Update grammar displays
+        originalGrammarEl.textContent =
+          (result && result.originalGrammar && result.originalGrammar.trim()) ||
+          "N/A";
+        resolvedGrammarEl.textContent =
+          (result && result.resolvedGrammar && result.resolvedGrammar.trim()) ||
+          "N/A";
+
+        // Handle syntax or analyzer errors
+        if (!result || result.error) {
+          const errMsg =
+            (result && result.error) || "Unknown error occurred during analysis.";
+          ambiguityStatus.className = "status-banner status-error";
+          ambiguityStatus.textContent = "Analysis Failed — Syntax Error";
+          errorBox.style.display = "block";
+          errorBox.textContent = "Error: " + errMsg;
+          explanationText.textContent =
+            (result && result.explanation) || "Grammar analysis failed.";
+        } else {
+          errorBox.style.display = "none";
+          errorBox.textContent = "";
+
+          if (result.isAmbiguous) {
+            ambiguityStatus.className = "status-banner status-ambiguous";
+            ambiguityStatus.textContent =
+              "Status: AMBIGUOUS — Dangling-Else Detected (" +
+              (Array.isArray(result.beforeTrees) ? result.beforeTrees.length : 2) +
+              " competing parse trees shown)";
+          } else {
+            ambiguityStatus.className = "status-banner status-unambiguous";
+            ambiguityStatus.textContent =
+              "Status: UNAMBIGUOUS — Single Valid Parse Tree";
+          }
+
+          const associations = describeElseAssociations(result.afterTree);
+          const assocSummary =
+            associations.length > 0
+              ? " Resolved association: " + associations.join("; ") + "."
+              : "";
+          explanationText.textContent =
+            (result.explanation || "") + assocSummary;
+        }
+
+        // Render parse trees via visualization.js
+        if (typeof window.renderTrees === "function") {
+          window.renderTrees(result);
+        }
+      }
+
+      /**
+       * Runs `runTests()` from `tests.js` and preserves the current parse tree view.
+       */
+      function handleRunTests() {
+        if (typeof window.runTests !== "function") {
+          const testContainer = document.getElementById("testResults");
+          if (testContainer) {
+            testContainer.textContent = "Error: tests.js (runTests) is not loaded.";
+          }
+          return;
+        }
+
+        // Save current visualization HTML because runTests() also exercises renderTrees()
+        const savedBeforeHtml = treeBeforeEl ? treeBeforeEl.innerHTML : "";
+        const savedAfterHtml = treeAfterEl ? treeAfterEl.innerHTML : "";
+
+        window.runTests();
+
+        if (treeBeforeEl && savedBeforeHtml) {
+          treeBeforeEl.innerHTML = savedBeforeHtml;
+        }
+        if (treeAfterEl && savedAfterHtml) {
+          treeAfterEl.innerHTML = savedAfterHtml;
+        }
+      }
+
+      /**
+       * Checks for `bonus.js` availability and connects the Generate button if present.
+       */
+      function setupBonusIntegration() {
+        const bonusFn =
+          window.generateTestCase ||
+          window.generateBonusTestCase ||
+          window.buildTestCase ||
+          (window.BonusBuilder && window.BonusBuilder.generate);
+
+        if (window.__bonusModuleMissing || typeof bonusFn !== "function") {
+          bonusStatus.textContent =
+            "Placeholder: bonus.js is not available in the workspace yet. Once bonus.js is added, this builder will generate test cases automatically.";
+        } else {
+          bonusStatus.textContent = "bonus.js detected and ready.";
+        }
+
+        generateBonusBtn.addEventListener("click", function () {
+          const activeBonusFn =
+            window.generateTestCase ||
+            window.generateBonusTestCase ||
+            window.buildTestCase ||
+            (window.BonusBuilder && window.BonusBuilder.generate);
+
+          if (typeof activeBonusFn !== "function") {
+            bonusStatus.textContent =
+              "Cannot generate test case: bonus.js module is not available yet.";
+            return;
+          }
+
+          const depth = parseInt(nestingDepthInput.value, 10) || 2;
+          const placement = elsePlacementSelect.value;
+          try {
+            const generated = activeBonusFn(depth, placement);
+            if (typeof generated === "string" && generated.trim()) {
+              codeInput.value = generated;
+              bonusStatus.textContent =
+                "Generated test case (depth=" + depth + ", else=" + placement + ").";
+              handleAnalyze();
+            } else if (generated && typeof generated.code === "string") {
+              codeInput.value = generated.code;
+              bonusStatus.textContent =
+                "Generated test case (depth=" + depth + ", else=" + placement + ").";
+              handleAnalyze();
+            }
+          } catch (err) {
+            bonusStatus.textContent =
+              "Bonus generator error: " + (err && err.message ? err.message : String(err));
+          }
+        });
+      }
+
+      // Attach event listeners once
+      analyzeBtn.addEventListener("click", handleAnalyze);
+      runTestsBtn.addEventListener("click", handleRunTests);
+
+      const presetButtons = document.querySelectorAll(".preset-btn");
+      for (let i = 0; i < presetButtons.length; i++) {
+        presetButtons[i].addEventListener("click", function (e) {
+          const sampleCode = e.currentTarget.getAttribute("data-code");
+          if (sampleCode) {
+            codeInput.value = sampleCode;
+            handleAnalyze();
+          }
+        });
+      }
+
+      setupBonusIntegration();
+
+      // Run initial analysis on page load with the default statement
+      handleAnalyze();
+    })();
+  </script>
+</body>
+</html>
+
